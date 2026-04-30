@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 写作 Prompt 卡片台</title>
+    <title>顶会写作技能</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -11,8 +11,10 @@
     <div class="bg-layer bg-layer-b" aria-hidden="true"></div>
     <main class="page">
       <header class="hero">
-        <h1>论文写作 Prompt 卡片台</h1>
-        <p id="cardCount" class="card-count">加载中...</p>
+        <div class="hero-head">
+          <h1>顶会写作技能</h1>
+          <button id="openAddBtn" class="open-add-btn" type="button">+ 新增卡片</button>
+        </div>
       </header>
 
       <section id="notice" class="notice hidden" aria-live="polite">
@@ -21,21 +23,61 @@
         <input id="manualFile" type="file" accept=".md,text/markdown" class="hidden" />
       </section>
 
-      <section class="zone common-zone" aria-label="常用卡片区">
+      <section class="zone common-zone" aria-label="主力卡片区">
         <div class="zone-head">
-          <h2>常用卡片</h2>
-          <p>支持拖动排序，顺序会自动记住。</p>
+          <div class="zone-head-main">
+            <h2>主力卡片</h2>
+          </div>
+          <p>支持拖动排序。</p>
         </div>
-        <section id="commonRoot" class="cards" aria-label="常用卡片列表"></section>
+        <section id="commonRoot" class="cards" aria-label="主力卡片列表"></section>
       </section>
 
       <details id="poolPanel" class="zone pool-zone">
         <summary>
-          <span>卡片池（未使用）</span>
+          <span>替补卡片</span>
         </summary>
-        <section id="poolRoot" class="cards" aria-label="卡片池列表"></section>
+        <section id="poolRoot" class="cards" aria-label="替补卡片列表"></section>
+      </details>
+
+      <details id="trashPanel" class="zone trash-zone">
+        <summary>
+          <span>垃圾卡片</span>
+          <button id="clearTrashBtn" class="clear-trash-btn" type="button">清空垃圾</button>
+        </summary>
+        <section id="trashRoot" class="cards" aria-label="垃圾卡片列表"></section>
       </details>
     </main>
+
+    <div id="addModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="addModalTitle">
+      <div id="addModalMask" class="modal-mask"></div>
+      <section class="modal-panel">
+        <h3 id="addModalTitle">新增卡片</h3>
+        <details class="meta-template-panel">
+          <summary>
+            <span>元模板</span>
+            <span id="metaStatusText" class="meta-status"></span>
+          </summary>
+          <textarea id="metaTemplateInput" readonly></textarea>
+        </details>
+        <label>
+          需求
+          <textarea id="metaNeedInput" placeholder="例如：把论文 Introduction 压缩成顶会风格 Abstract，300字内。"></textarea>
+        </label>
+        <div class="add-form-actions">
+          <button id="copyMetaBtn" class="create-btn" type="button">复制元模板 + 需求</button>
+        </div>
+        <label>
+          Skills
+          <textarea id="addPromptInput" placeholder="粘贴 AI 返回内容：第一行写标题，后续写完整 skills 模板。"></textarea>
+        </label>
+        <div class="add-form-actions">
+          <button id="createCardBtn" class="create-btn" type="button">创建卡片</button>
+          <button id="cancelAddBtn" type="button">取消</button>
+        </div>
+        <p id="addStatusText" class="add-status"></p>
+      </section>
+    </div>
 
     <template id="cardTemplate">
       <article class="card">
@@ -64,7 +106,7 @@
         </header>
         <textarea class="card-input" placeholder="把要处理的内容贴在这里..."></textarea>
         <div class="card-actions">
-          <button class="copy-btn" type="button">复制模板 + 输入</button>
+          <button class="copy-btn" type="button">复制全部</button>
           <button class="toggle-btn" type="button"></button>
         </div>
         <section class="edit-panel hidden">

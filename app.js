@@ -9,11 +9,51 @@ const DEFAULT_COMMON_TITLES = [
   "表达润色（英文论文）",
   "实验分析",
 ];
+const META_TEMPLATE_TEXT = `# Role
+你是一位世界顶级的 AI 提示词工程师（Prompt Engineer）。你的任务是根据我的【核心需求】，为我量身定制一套高标准、结构化的提示词模板，以便我能够用它来指导其他 AI 完美执行任务。
+
+# Task
+请分析我的需求，并严格按照下方的【目标模板结构】生成一份高质量的提示词。
+
+# Target Template Structure (目标模板结构)
+你输出的提示词必须包含以下四个部分，并且排版清晰：
+1. # Role (角色设定)：为执行该任务的 AI 赋予一个最匹配、最资深的专家身份（例如：资深学术翻译官、顶级期刊编辑、高级数据分析师等）。
+2. # Task (核心任务)：用一两句话清晰、无歧义地概括 AI 需要完成的动作。
+3. # Constraints (约束与规则)：这是最核心的部分。请根据我的需求，帮我穷举并细化 AI 在执行任务时必须遵守的规则。可以包括但不限于：
+   - 工作流（第一步做什么，第二步做什么）
+   - 质量标准（语气风格、专业度要求）
+   - 避坑指南（明确指出“不要做什么”，比如不要擅自增加信息、不要使用特定词汇等）
+   - 输出格式（JSON、Markdown、纯文本、表格等）
+4. # Input (输入区)：在末尾留出用括号包裹的占位符，例如 [在此处粘贴你的文本/数据/代码]，方便我后续填入真实内容。
+
+# Constraints for You (对你的约束)
+1. 专业度：生成的约束条件（Constraints）必须直击痛点。比如如果是学术写作任务，你要自动帮我加上“学术客观语气”、“避免使用过度口语化的副词”等专业规则。
+2. 零废话：只输出生成好的提示词模板本身，不要加任何诸如“好的，我为您生成”之类的寒暄废话。
+3. 语言：输出的提示词模板使用中文。
+4. 输出格式补充：最终输出的第一行必须是标题（仅标题，不加解释），且必须为中文短标题，严格控制在 4-5 个字；从第二行开始输出完整 skills 模板正文。
+
+# Input (我的核心需求)
+[在这里填写你的具体需求，例如：我想把一篇论文的 Introduction 喂给 AI，让它帮我写出一篇不超过300字的 Abstract，要有逻辑感，符合计算机顶会的风格。]`;
+const META_INPUT_PLACEHOLDER =
+  "[在这里填写你的具体需求，例如：我想把一篇论文的 Introduction 喂给 AI，让它帮我写出一篇不超过300字的 Abstract，要有逻辑感，符合计算机顶会的风格。]";
 
 const commonRoot = document.getElementById("commonRoot");
 const poolRoot = document.getElementById("poolRoot");
+const trashRoot = document.getElementById("trashRoot");
+const clearTrashBtn = document.getElementById("clearTrashBtn");
 const cardCount = document.getElementById("cardCount");
 const cardTemplate = document.getElementById("cardTemplate");
+const openAddBtn = document.getElementById("openAddBtn");
+const addModal = document.getElementById("addModal");
+const addModalMask = document.getElementById("addModalMask");
+const metaTemplateInput = document.getElementById("metaTemplateInput");
+const metaNeedInput = document.getElementById("metaNeedInput");
+const copyMetaBtn = document.getElementById("copyMetaBtn");
+const metaStatusText = document.getElementById("metaStatusText");
+const addPromptInput = document.getElementById("addPromptInput");
+const createCardBtn = document.getElementById("createCardBtn");
+const cancelAddBtn = document.getElementById("cancelAddBtn");
+const addStatusText = document.getElementById("addStatusText");
 const notice = document.getElementById("notice");
 const noticeText = document.getElementById("noticeText");
 const manualFile = document.getElementById("manualFile");
@@ -26,6 +66,7 @@ const inputStore = new Map();
 let state = createDefaultState();
 
 init();
+bindAddCardPanel();
 
 async function init() {
   const markdown = await tryReadReadme();
@@ -62,6 +103,14 @@ manualFile.addEventListener("change", async (event) => {
   const text = await file.text();
   parseAndInit(text);
 });
+
+if (clearTrashBtn) {
+  clearTrashBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearTrash();
+  });
+}
 
 commonRoot.addEventListener("dragover", (event) => {
   event.preventDefault();
@@ -274,11 +323,15 @@ function render() {
   const itemMap = new Map(allItems.map((item) => [item.id, item]));
   const commonItems = state.commonIds.map((id) => itemMap.get(id)).filter(Boolean);
   const poolItems = allItems.filter((item) => !state.commonIds.includes(item.id));
+  const trashItems = (state.trashedCustomCards || []).map((item) => ({ ...item, source: "trash" }));
 
   renderList(commonRoot, commonItems, "common");
   renderList(poolRoot, poolItems, "pool");
+  renderList(trashRoot, trashItems, "trash");
 
-  cardCount.textContent = `总计 ${allItems.length} 张卡片，常用 ${commonItems.length}，卡片池 ${poolItems.length}`;
+  if (cardCount) {
+    cardCount.textContent = `总计 ${allItems.length} 张卡片，常用 ${commonItems.length}，卡片池 ${poolItems.length}`;
+  }
 }
 
 function renderList(root, items, zone) {
@@ -290,7 +343,6 @@ function renderList(root, items, zone) {
       const card = createCard(item, zone, index);
       fragment.appendChild(card);
     });
-    fragment.appendChild(createAddCardNode(items.length));
     root.appendChild(fragment);
     return;
   }
@@ -298,7 +350,13 @@ function renderList(root, items, zone) {
   if (items.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-tip";
-    empty.textContent = "卡片池暂无卡片";
+    if (zone === "pool") {
+      empty.textContent = "替补卡片暂无卡片";
+    } else if (zone === "trash") {
+      empty.textContent = "目前没有垃圾";
+    } else {
+      empty.textContent = "暂无卡片";
+    }
     root.appendChild(empty);
     return;
   }
@@ -332,8 +390,8 @@ function createCard(item, zone, index) {
   const cancelEditBtn = node.querySelector(".cancel-edit-btn");
 
   title.textContent = item.title;
-  subtitle.textContent =
-    zone === "common" ? "常用卡片，可拖动排序" : "来自卡片池，加入常用后会显示在主页";
+  subtitle.textContent = "";
+  subtitle.classList.add("hidden");
   preview.textContent = item.prompt;
   input.value = inputStore.get(item.id) || "";
 
@@ -341,13 +399,26 @@ function createCard(item, zone, index) {
     node.setAttribute("draggable", "true");
     node.classList.add("draggable");
     bindDragEvents(node, item.id);
-    toggleBtn.textContent = "移回卡片池";
+    toggleBtn.textContent = "移到替补";
     toggleBtn.classList.add("warning");
-    deleteBtn.classList.add("hidden");
-  } else {
-    toggleBtn.textContent = "加入常用";
+  } else if (zone === "pool") {
+    toggleBtn.textContent = "加入主力";
     toggleBtn.classList.add("secondary");
+  } else {
+    toggleBtn.classList.add("hidden");
+    copyBtn.classList.add("hidden");
+    input.classList.add("hidden");
+    clearInputBtn.classList.add("hidden");
+    status.classList.add("hidden");
+    node.removeAttribute("draggable");
+  }
+
+  const isCustomCard = item.source === "custom";
+  editBtn.classList.add("hidden");
+  if (isCustomCard && zone !== "trash") {
     deleteBtn.classList.remove("hidden");
+  } else {
+    deleteBtn.classList.add("hidden");
   }
 
   input.addEventListener("input", () => {
@@ -365,6 +436,9 @@ function createCard(item, zone, index) {
   });
 
   toggleBtn.addEventListener("click", () => {
+    if (zone === "trash") {
+      return;
+    }
     if (zone === "common") {
       removeFromCommon(item.id);
     } else {
@@ -399,81 +473,112 @@ function createCard(item, zone, index) {
   });
 
   deleteBtn.addEventListener("click", () => {
-    if (zone !== "pool") {
-      return;
-    }
-    const ok = window.confirm(`确定删除卡片「${item.title}」吗？`);
-    if (!ok) {
-      return;
-    }
     deleteCard(item.id);
   });
 
   return node;
 }
 
-function createAddCardNode(index) {
-  const node = document.createElement("article");
-  node.className = "card add-card";
-  node.style.setProperty("--delay", `${Math.min(index * 40, 520)}ms`);
-  node.innerHTML = `
-    <div class="add-card-head">
-      <h3>新增卡片</h3>
-      <p>在常用区快速创建你的自定义模板卡片。</p>
-    </div>
-    <button class="open-add-btn" type="button">+ 新增卡片</button>
-    <section class="add-form hidden">
-      <label>
-        标题
-        <input class="add-title" type="text" placeholder="例如：英文润色（个人版）" />
-      </label>
-      <label>
-        模板内容
-        <textarea class="add-prompt" placeholder="粘贴你的模板内容..."></textarea>
-      </label>
-      <div class="add-form-actions">
-        <button class="create-btn" type="button">创建卡片</button>
-        <button class="cancel-btn" type="button">取消</button>
-      </div>
-      <p class="add-status"></p>
-    </section>
-  `;
+function bindAddCardPanel() {
+  if (
+    !openAddBtn ||
+    !addModal ||
+    !addModalMask ||
+    !metaTemplateInput ||
+    !metaNeedInput ||
+    !copyMetaBtn ||
+    !metaStatusText ||
+    !addPromptInput ||
+    !createCardBtn ||
+    !cancelAddBtn ||
+    !addStatusText
+  ) {
+    return;
+  }
 
-  const openBtn = node.querySelector(".open-add-btn");
-  const form = node.querySelector(".add-form");
-  const titleInput = node.querySelector(".add-title");
-  const promptInput = node.querySelector(".add-prompt");
-  const createBtn = node.querySelector(".create-btn");
-  const cancelBtn = node.querySelector(".cancel-btn");
-  const addStatus = node.querySelector(".add-status");
+  metaTemplateInput.value = META_TEMPLATE_TEXT;
 
-  openBtn.addEventListener("click", () => {
-    form.classList.remove("hidden");
-    openBtn.classList.add("hidden");
-    titleInput.focus();
+  openAddBtn.addEventListener("click", () => {
+    addModal.classList.remove("hidden");
+    metaNeedInput.focus();
   });
 
-  cancelBtn.addEventListener("click", () => {
-    form.classList.add("hidden");
-    openBtn.classList.remove("hidden");
-    titleInput.value = "";
-    promptInput.value = "";
-    addStatus.textContent = "";
+  addModalMask.addEventListener("click", () => {
+    closeAddPanel();
   });
 
-  createBtn.addEventListener("click", () => {
-    const title = titleInput.value.trim();
-    const prompt = promptInput.value.trim();
-    if (!title || !prompt) {
-      addStatus.textContent = "标题和模板内容不能为空";
-      addStatus.className = "add-status error";
+  cancelAddBtn.addEventListener("click", () => {
+    closeAddPanel();
+  });
+
+  copyMetaBtn.addEventListener("click", async () => {
+    const need = metaNeedInput.value.trim();
+    if (!need) {
+      metaStatusText.textContent = "请先填写需求";
+      metaStatusText.className = "meta-status error";
+      metaNeedInput.focus();
       return;
     }
-    addNewCard(title, prompt);
+    const output = META_TEMPLATE_TEXT.replace(META_INPUT_PLACEHOLDER, need);
+    try {
+      await copyToClipboard(output);
+      metaStatusText.textContent = "已复制元模板 + 需求";
+      metaStatusText.className = "meta-status success";
+    } catch (error) {
+      metaStatusText.textContent = "复制失败，请手动复制";
+      metaStatusText.className = "meta-status error";
+    }
   });
 
-  return node;
+  createCardBtn.addEventListener("click", () => {
+    const parsed = parseGeneratedSkill(addPromptInput.value);
+    if (!parsed) {
+      addStatusText.textContent = "请粘贴完整内容：第一行标题，后续为 skills 模板";
+      addStatusText.className = "add-status error";
+      return;
+    }
+    addNewCard(parsed.title, parsed.prompt);
+    closeAddPanel();
+  });
 }
+
+function closeAddPanel() {
+  if (!addModal) {
+    return;
+  }
+  addModal.classList.add("hidden");
+  metaNeedInput.value = "";
+  metaStatusText.textContent = "";
+  metaStatusText.className = "meta-status";
+  addPromptInput.value = "";
+  addStatusText.textContent = "";
+  addStatusText.className = "add-status";
+}
+
+function parseGeneratedSkill(rawText) {
+  const lines = String(rawText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim());
+  const nonEmpty = lines.filter(Boolean);
+  if (nonEmpty.length < 2) {
+    return null;
+  }
+  let title = nonEmpty[0]
+    .replace(/^#+\s*/, "")
+    .replace(/^标题[:：]\s*/i, "")
+    .trim();
+  const prompt = nonEmpty.slice(1).join("\n").trim();
+  if (!title || !prompt) {
+    return null;
+  }
+  return { title, prompt };
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && addModal && !addModal.classList.contains("hidden")) {
+    closeAddPanel();
+  }
+});
 
 function bindDragEvents(node, cardId) {
   node.addEventListener("dragstart", (event) => {
@@ -589,6 +694,14 @@ function deleteCard(cardId) {
   }
 
   if (item.source === "custom") {
+    state.trashedCustomCards = state.trashedCustomCards || [];
+    if (!state.trashedCustomCards.some((card) => card.id === cardId)) {
+      state.trashedCustomCards.push({
+        id: item.id,
+        title: item.title,
+        prompt: item.prompt,
+      });
+    }
     state.customCards = state.customCards.filter((card) => card.id !== cardId);
   } else {
     if (!state.deletedCardIds.includes(cardId)) {
@@ -599,6 +712,14 @@ function deleteCard(cardId) {
   delete state.editedCards[cardId];
   state.commonIds = state.commonIds.filter((id) => id !== cardId);
   inputStore.delete(cardId);
+  commitState();
+}
+
+function clearTrash() {
+  if (!state.trashedCustomCards || state.trashedCustomCards.length === 0) {
+    return;
+  }
+  state.trashedCustomCards = [];
   commitState();
 }
 
@@ -702,6 +823,7 @@ function createDefaultState() {
   return {
     commonIds: [],
     customCards: [],
+    trashedCustomCards: [],
     editedCards: {},
     deletedCardIds: [],
   };
@@ -718,6 +840,16 @@ function normalizeState(raw) {
   }
   if (Array.isArray(raw.customCards)) {
     next.customCards = raw.customCards
+      .filter((card) => card && typeof card === "object")
+      .map((card) => ({
+        id: String(card.id || "").trim(),
+        title: String(card.title || "").trim(),
+        prompt: String(card.prompt || "").trim(),
+      }))
+      .filter((card) => card.id && card.title && card.prompt);
+  }
+  if (Array.isArray(raw.trashedCustomCards)) {
+    next.trashedCustomCards = raw.trashedCustomCards
       .filter((card) => card && typeof card === "object")
       .map((card) => ({
         id: String(card.id || "").trim(),
