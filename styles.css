@@ -145,6 +145,23 @@ body {
   box-shadow: var(--shadow-md);
 }
 
+.page-footer {
+  margin-top: 18px;
+  padding: 10px 2px 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.page-footer a {
+  color: #1e6089;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(30, 96, 137, 0.28);
+}
+
+.page-footer a:hover {
+  border-bottom-color: rgba(30, 96, 137, 0.55);
+}
+
 .zone-head {
   display: flex;
   justify-content: space-between;
@@ -229,6 +246,12 @@ body {
   opacity: 0;
   animation: enter 340ms ease forwards;
   animation-delay: var(--delay, 0ms);
+}
+
+body.no-enter-anim .card {
+  animation: none !important;
+  transform: none !important;
+  opacity: 1 !important;
 }
 
 @keyframes enter {
@@ -442,34 +465,29 @@ body {
   font-size: 0.86rem;
 }
 
-.open-add-btn {
-  width: auto;
-  padding: 0 14px;
-  white-space: nowrap;
-  min-height: 42px;
-  border-radius: 10px;
-  border: 1px dashed rgba(31, 143, 120, 0.55);
-  background: rgba(31, 143, 120, 0.08);
-  color: #166854;
-  font-weight: 700;
-  cursor: pointer;
-}
-
 .hero-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.reset-usage-btn {
+.hero-actions button {
+  width: auto;
+  white-space: nowrap;
   min-height: 42px;
-  padding: 0 12px;
+  padding: 0 14px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.86);
   color: #1f3457;
   font-weight: 600;
   cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.hero-actions button:hover {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: var(--border-strong);
 }
 
 .modal {

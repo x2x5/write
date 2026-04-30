@@ -44,6 +44,7 @@ const clearTrashBtn = document.getElementById("clearTrashBtn");
 const cardCount = document.getElementById("cardCount");
 const cardTemplate = document.getElementById("cardTemplate");
 const openAddBtn = document.getElementById("openAddBtn");
+const toggleUsageSortBtn = document.getElementById("toggleUsageSortBtn");
 const resetUsageBtn = document.getElementById("resetUsageBtn");
 const addModal = document.getElementById("addModal");
 const addModalMask = document.getElementById("addModalMask");
@@ -116,6 +117,12 @@ if (clearTrashBtn) {
 if (resetUsageBtn) {
   resetUsageBtn.addEventListener("click", () => {
     resetAllUsageCount();
+  });
+}
+
+if (toggleUsageSortBtn) {
+  toggleUsageSortBtn.addEventListener("click", () => {
+    applyUsageSort();
   });
 }
 
@@ -326,19 +333,14 @@ function buildStableId(title, usedIds) {
   return id;
 }
 
-function render() {
+function render(options = {}) {
+  const suppressAnimation = Boolean(options.suppressAnimation);
+  if (suppressAnimation) {
+    document.body.classList.add("no-enter-anim");
+  }
+
   const itemMap = new Map(allItems.map((item) => [item.id, item]));
-  const commonOrder = new Map(state.commonIds.map((id, index) => [id, index]));
-  const commonItems = state.commonIds
-    .map((id) => itemMap.get(id))
-    .filter(Boolean)
-    .sort((a, b) => {
-      const diff = getUsageCount(b.id) - getUsageCount(a.id);
-      if (diff !== 0) {
-        return diff;
-      }
-      return (commonOrder.get(a.id) || 0) - (commonOrder.get(b.id) || 0);
-    });
+  const commonItems = state.commonIds.map((id) => itemMap.get(id)).filter(Boolean);
   const poolItems = allItems.filter((item) => !state.commonIds.includes(item.id));
   const trashItems = (state.trashedCustomCards || []).map((item) => ({ ...item, source: "trash" }));
 
@@ -348,6 +350,11 @@ function render() {
 
   if (cardCount) {
     cardCount.textContent = `总计 ${allItems.length} 张卡片，常用 ${commonItems.length}，卡片池 ${poolItems.length}`;
+  }
+  if (suppressAnimation) {
+    requestAnimationFrame(() => {
+      document.body.classList.remove("no-enter-anim");
+    });
   }
 }
 
@@ -388,6 +395,8 @@ function renderList(root, items, zone) {
 function createCard(item, zone, index) {
   const node = cardTemplate.content.firstElementChild.cloneNode(true);
   node.style.setProperty("--delay", `${Math.min(index * 40, 520)}ms`);
+  node.dataset.cardId = item.id;
+  node.dataset.zone = zone;
 
   const title = node.querySelector(".card-title");
   const subtitle = node.querySelector(".card-subtitle");
@@ -450,7 +459,15 @@ function createCard(item, zone, index) {
   copyBtn.addEventListener("click", async () => {
     const content = mergePromptAndInput(item.prompt, input.value);
     if (input.value.trim()) {
-      incrementUsageCount(item.id);
+      const nextCount = incrementUsageCount(item.id, { skipRender: true });
+      const usageNode = node.querySelector(".usage-count");
+      if (usageNode) {
+        usageNode.textContent = `使用 ${nextCount} 次`;
+      }
+      if (state.sortByUsage) {
+        state.sortByUsage = false;
+        saveState();
+      }
     }
     try {
       await copyToClipboard(content);
@@ -814,13 +831,18 @@ function getUsageCount(cardId) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
-function incrementUsageCount(cardId) {
+function incrementUsageCount(cardId, options) {
   if (!state.usageCountById || typeof state.usageCountById !== "object") {
     state.usageCountById = {};
   }
   const current = getUsageCount(cardId);
-  state.usageCountById[cardId] = current + 1;
-  commitState();
+  const next = current + 1;
+  state.usageCountById[cardId] = next;
+  saveState();
+  if (!options || !options.skipRender) {
+    render({ suppressAnimation: true });
+  }
+  return next;
 }
 
 function resetUsageCount(cardId) {
@@ -837,6 +859,22 @@ function resetAllUsageCount() {
   commitState();
 }
 
+function applyUsageSort() {
+  if (state.sortByUsage) {
+    return;
+  }
+  const orderMap = new Map(state.commonIds.map((id, index) => [id, index]));
+  state.commonIds = [...state.commonIds].sort((a, b) => {
+    const diff = getUsageCount(b) - getUsageCount(a);
+    if (diff !== 0) {
+      return diff;
+    }
+    return (orderMap.get(a) || 0) - (orderMap.get(b) || 0);
+  });
+  state.sortByUsage = true;
+  commitState({ suppressAnimation: true });
+}
+
 function buildCustomCardId() {
   const existing = new Set(allItems.map((item) => item.id));
   let id = "";
@@ -846,11 +884,11 @@ function buildCustomCardId() {
   return id;
 }
 
-function commitState() {
+function commitState(options = {}) {
   refreshAllItems();
   state.commonIds = normalizeCommonIds(state.commonIds, allItems);
   saveState();
-  render();
+  render(options);
 }
 
 function refreshAllItems() {
@@ -939,6 +977,7 @@ function createDefaultState() {
     customCards: [],
     trashedCustomCards: [],
     usageCountById: {},
+    sortByUsage: false,
     editedCards: {},
     deletedCardIds: [],
   };
@@ -981,6 +1020,9 @@ function normalizeState(raw) {
       }
       next.usageCountById[id] = Math.floor(count);
     });
+  }
+  if (typeof raw.sortByUsage === "boolean") {
+    next.sortByUsage = raw.sortByUsage;
   }
   if (raw.editedCards && typeof raw.editedCards === "object") {
     Object.keys(raw.editedCards).forEach((id) => {
