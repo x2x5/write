@@ -1,6 +1,8 @@
 "use strict";
 
 const STORAGE_KEY = "prompt-card-layout-v2";
+const PRIMARY_DATA_SOURCE = "./skills.md";
+const FALLBACK_DATA_SOURCE = "./README.md";
 const PART_ONE_HEADING = /^#\s+Part I:\s*写作 Prompt 集合\s*$/;
 const PART_TWO_HEADING = /^#\s+Part II:/;
 const DEFAULT_COMMON_TITLES = [
@@ -71,7 +73,7 @@ init();
 bindAddCardPanel();
 
 async function init() {
-  const markdown = await tryReadReadme();
+  const markdown = await tryReadDataSource();
   if (!markdown) {
     render();
     return;
@@ -79,21 +81,31 @@ async function init() {
   parseAndInit(markdown);
 }
 
-async function tryReadReadme() {
+async function tryReadDataSource() {
   try {
-    const response = await fetch("./README.md", { cache: "no-store" });
+    const response = await fetch(PRIMARY_DATA_SOURCE, { cache: "no-store" });
     if (!response.ok) {
-      throw new Error("无法读取 README.md");
+      throw new Error("无法读取 skills.md");
     }
     const text = await response.text();
     hideNotice();
     return text;
   } catch (error) {
-    showNotice(
-      "浏览器没有直接读取到 README.md。你可以点击下面按钮手动选择本地 README.md 文件。"
-    );
-    manualLoadBtn.classList.remove("hidden");
-    return null;
+    try {
+      const fallbackResponse = await fetch(FALLBACK_DATA_SOURCE, { cache: "no-store" });
+      if (!fallbackResponse.ok) {
+        throw new Error("无法读取 fallback README.md");
+      }
+      const fallbackText = await fallbackResponse.text();
+      showNotice("当前未读取到 skills.md，已回退到 README.md。建议把数据迁移到 skills.md。");
+      return fallbackText;
+    } catch (fallbackError) {
+      showNotice(
+        "浏览器没有直接读取到 skills.md。你可以点击下面按钮手动选择本地 skills.md 文件。"
+      );
+      manualLoadBtn.classList.remove("hidden");
+      return null;
+    }
   }
 }
 
@@ -161,7 +173,7 @@ function parseAndInit(markdown) {
     render();
 
     if (allItems.length === 0) {
-      showNotice("没有解析到可用模板，请检查 README 的 Part I 和代码块格式。");
+      showNotice("没有解析到可用模板，请检查 skills.md 的 Part I 和代码块格式。");
       manualLoadBtn.classList.remove("hidden");
     }
   } catch (error) {
@@ -169,7 +181,7 @@ function parseAndInit(markdown) {
     allItems = [];
     state = createDefaultState();
     render();
-    showNotice("解析 README 失败，请确认文件内容完整后重试。");
+    showNotice("解析 skills.md 失败，请确认文件内容完整后重试。");
     manualLoadBtn.classList.remove("hidden");
   }
 }
@@ -211,7 +223,7 @@ function extractPartOne(markdown) {
   }
 
   if (!inPartOne) {
-    throw new Error("README.md 中未找到 Part I");
+    throw new Error("skills.md 中未找到 Part I");
   }
 
   return buffer.join("\n");
