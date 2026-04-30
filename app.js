@@ -44,6 +44,7 @@ const clearTrashBtn = document.getElementById("clearTrashBtn");
 const cardCount = document.getElementById("cardCount");
 const cardTemplate = document.getElementById("cardTemplate");
 const openAddBtn = document.getElementById("openAddBtn");
+const resetUsageBtn = document.getElementById("resetUsageBtn");
 const addModal = document.getElementById("addModal");
 const addModalMask = document.getElementById("addModalMask");
 const metaTemplateInput = document.getElementById("metaTemplateInput");
@@ -109,6 +110,12 @@ if (clearTrashBtn) {
     event.preventDefault();
     event.stopPropagation();
     clearTrash();
+  });
+}
+
+if (resetUsageBtn) {
+  resetUsageBtn.addEventListener("click", () => {
+    resetAllUsageCount();
   });
 }
 
@@ -321,7 +328,17 @@ function buildStableId(title, usedIds) {
 
 function render() {
   const itemMap = new Map(allItems.map((item) => [item.id, item]));
-  const commonItems = state.commonIds.map((id) => itemMap.get(id)).filter(Boolean);
+  const commonOrder = new Map(state.commonIds.map((id, index) => [id, index]));
+  const commonItems = state.commonIds
+    .map((id) => itemMap.get(id))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const diff = getUsageCount(b.id) - getUsageCount(a.id);
+      if (diff !== 0) {
+        return diff;
+      }
+      return (commonOrder.get(a.id) || 0) - (commonOrder.get(b.id) || 0);
+    });
   const poolItems = allItems.filter((item) => !state.commonIds.includes(item.id));
   const trashItems = (state.trashedCustomCards || []).map((item) => ({ ...item, source: "trash" }));
 
@@ -382,6 +399,7 @@ function createCard(item, zone, index) {
   const deleteBtn = node.querySelector(".delete-btn");
   const status = node.querySelector(".copy-status");
   const preview = node.querySelector("pre");
+  const previewSummary = node.querySelector(".prompt-preview summary");
 
   const editPanel = node.querySelector(".edit-panel");
   const editTitleInput = node.querySelector(".edit-title");
@@ -393,6 +411,12 @@ function createCard(item, zone, index) {
   subtitle.textContent = "";
   subtitle.classList.add("hidden");
   preview.textContent = item.prompt;
+  if (previewSummary) {
+    const usage = document.createElement("span");
+    usage.className = "usage-count";
+    usage.textContent = `使用 ${getUsageCount(item.id)} 次`;
+    previewSummary.appendChild(usage);
+  }
   input.value = inputStore.get(item.id) || "";
 
   if (zone === "common") {
@@ -405,19 +429,17 @@ function createCard(item, zone, index) {
     toggleBtn.textContent = "加入主力";
     toggleBtn.classList.add("secondary");
   } else {
-    toggleBtn.classList.add("hidden");
-    copyBtn.classList.add("hidden");
-    input.classList.add("hidden");
-    clearInputBtn.classList.add("hidden");
-    status.classList.add("hidden");
+    toggleBtn.textContent = "加入主力";
+    toggleBtn.classList.add("secondary");
     node.removeAttribute("draggable");
   }
 
   const isCustomCard = item.source === "custom";
-  editBtn.classList.add("hidden");
   if (isCustomCard && zone !== "trash") {
+    editBtn.classList.remove("hidden");
     deleteBtn.classList.remove("hidden");
   } else {
+    editBtn.classList.add("hidden");
     deleteBtn.classList.add("hidden");
   }
 
@@ -427,6 +449,9 @@ function createCard(item, zone, index) {
 
   copyBtn.addEventListener("click", async () => {
     const content = mergePromptAndInput(item.prompt, input.value);
+    if (input.value.trim()) {
+      incrementUsageCount(item.id);
+    }
     try {
       await copyToClipboard(content);
       setStatus(status, "已复制到剪贴板", "success");
@@ -437,6 +462,7 @@ function createCard(item, zone, index) {
 
   toggleBtn.addEventListener("click", () => {
     if (zone === "trash") {
+      restoreFromTrash(item.id);
       return;
     }
     if (zone === "common") {
@@ -447,19 +473,56 @@ function createCard(item, zone, index) {
   });
 
   editBtn.addEventListener("click", () => {
-    editTitleInput.value = item.title;
-    editPromptInput.value = item.prompt;
-    editPanel.classList.remove("hidden");
+    if (node.querySelector(".inline-title-edit")) {
+      return;
+    }
+    const inlineInput = document.createElement("input");
+    inlineInput.type = "text";
+    inlineInput.className = "inline-title-edit";
+    inlineInput.value = item.title;
+    inlineInput.setAttribute("aria-label", "编辑标题");
+    inlineInput.style.width = "100%";
+    inlineInput.style.font = "inherit";
+    inlineInput.style.padding = "4px 6px";
+    inlineInput.style.borderRadius = "8px";
+    inlineInput.style.border = "1px solid rgba(20, 34, 58, 0.24)";
+
+    title.classList.add("hidden");
+    title.parentNode.insertBefore(inlineInput, title);
+    inlineInput.focus();
+    inlineInput.select();
+
+    const finish = (commit) => {
+      const newTitle = inlineInput.value.trim();
+      inlineInput.remove();
+      title.classList.remove("hidden");
+      if (!commit) {
+        return;
+      }
+      if (!newTitle) {
+        setStatus(status, "标题不能为空", "error");
+        return;
+      }
+      if (newTitle === item.title) {
+        return;
+      }
+      updateCard(item.id, newTitle, item.prompt);
+    };
+
+    inlineInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finish(true);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
+    });
+    inlineInput.addEventListener("blur", () => finish(true));
   });
 
   saveEditBtn.addEventListener("click", () => {
-    const newTitle = editTitleInput.value.trim();
-    const newPrompt = editPromptInput.value.trim();
-    if (!newTitle || !newPrompt) {
-      setStatus(status, "标题和模板内容不能为空", "error");
-      return;
-    }
-    updateCard(item.id, newTitle, newPrompt);
+    editPanel.classList.add("hidden");
   });
 
   cancelEditBtn.addEventListener("click", () => {
@@ -654,6 +717,7 @@ function addToCommon(cardId) {
 
 function removeFromCommon(cardId) {
   state.commonIds = state.commonIds.filter((id) => id !== cardId);
+  resetUsageCount(cardId);
   commitState();
 }
 
@@ -711,7 +775,28 @@ function deleteCard(cardId) {
 
   delete state.editedCards[cardId];
   state.commonIds = state.commonIds.filter((id) => id !== cardId);
+  resetUsageCount(cardId);
   inputStore.delete(cardId);
+  commitState();
+}
+
+function restoreFromTrash(cardId) {
+  const list = state.trashedCustomCards || [];
+  const item = list.find((card) => card.id === cardId);
+  if (!item) {
+    return;
+  }
+  state.trashedCustomCards = list.filter((card) => card.id !== cardId);
+  if (!state.customCards.some((card) => card.id === cardId)) {
+    state.customCards.push({
+      id: item.id,
+      title: item.title,
+      prompt: item.prompt,
+    });
+  }
+  if (!state.commonIds.includes(cardId)) {
+    state.commonIds.push(cardId);
+  }
   commitState();
 }
 
@@ -720,6 +805,35 @@ function clearTrash() {
     return;
   }
   state.trashedCustomCards = [];
+  commitState();
+}
+
+function getUsageCount(cardId) {
+  const map = state.usageCountById || {};
+  const value = Number(map[cardId] || 0);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function incrementUsageCount(cardId) {
+  if (!state.usageCountById || typeof state.usageCountById !== "object") {
+    state.usageCountById = {};
+  }
+  const current = getUsageCount(cardId);
+  state.usageCountById[cardId] = current + 1;
+  commitState();
+}
+
+function resetUsageCount(cardId) {
+  if (!state.usageCountById || typeof state.usageCountById !== "object") {
+    return;
+  }
+  if (state.usageCountById[cardId]) {
+    delete state.usageCountById[cardId];
+  }
+}
+
+function resetAllUsageCount() {
+  state.usageCountById = {};
   commitState();
 }
 
@@ -824,6 +938,7 @@ function createDefaultState() {
     commonIds: [],
     customCards: [],
     trashedCustomCards: [],
+    usageCountById: {},
     editedCards: {},
     deletedCardIds: [],
   };
@@ -857,6 +972,15 @@ function normalizeState(raw) {
         prompt: String(card.prompt || "").trim(),
       }))
       .filter((card) => card.id && card.title && card.prompt);
+  }
+  if (raw.usageCountById && typeof raw.usageCountById === "object") {
+    Object.keys(raw.usageCountById).forEach((id) => {
+      const count = Number(raw.usageCountById[id]);
+      if (!id || !Number.isFinite(count) || count <= 0) {
+        return;
+      }
+      next.usageCountById[id] = Math.floor(count);
+    });
   }
   if (raw.editedCards && typeof raw.editedCards === "object") {
     Object.keys(raw.editedCards).forEach((id) => {

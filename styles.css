@@ -87,10 +87,22 @@ body {
   gap: 12px;
 }
 
+.hero-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
 .hero h1 {
   margin: 0;
   font-size: clamp(1.55rem, 2.5vw, 2.2rem);
   line-height: 1.2;
+}
+
+.hero-tip {
+  color: var(--muted);
+  font-size: 0.86rem;
+  white-space: nowrap;
 }
 
 .notice {
@@ -443,6 +455,23 @@ body {
   cursor: pointer;
 }
 
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reset-usage-btn {
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.86);
+  color: #1f3457;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -621,9 +650,20 @@ body {
 }
 
 .prompt-preview summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   cursor: pointer;
   color: var(--muted);
   font-size: 0.83rem;
+}
+
+.usage-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .prompt-preview pre {
@@ -687,6 +727,10 @@ body {
   .hero-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .hero-title-wrap {
+    flex-wrap: nowrap;
   }
 
   .cards {

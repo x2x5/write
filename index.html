@@ -12,8 +12,14 @@
     <main class="page">
       <header class="hero">
         <div class="hero-head">
-          <h1>顶会写作技能</h1>
-          <button id="openAddBtn" class="open-add-btn" type="button">+ 新增卡片</button>
+          <div class="hero-title-wrap">
+            <h1>顶会写作技能</h1>
+            <span class="hero-tip">支持拖动排序</span>
+          </div>
+          <div class="hero-actions">
+            <button id="openAddBtn" class="open-add-btn" type="button">+ 新增卡片</button>
+            <button id="resetUsageBtn" class="reset-usage-btn" type="button">次数清零</button>
+          </div>
         </div>
       </header>
 
@@ -24,12 +30,6 @@
       </section>
 
       <section class="zone common-zone" aria-label="主力卡片区">
-        <div class="zone-head">
-          <div class="zone-head-main">
-            <h2>主力卡片</h2>
-          </div>
-          <p>支持拖动排序。</p>
-        </div>
         <section id="commonRoot" class="cards" aria-label="主力卡片列表"></section>
       </section>
 
